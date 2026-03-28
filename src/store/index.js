@@ -35,8 +35,8 @@ export const useClubStore = create((set) => ({
   onlineUsers: [],
   typingUsers: [],
   sidePanelOpen: false,
-  sidePanelTab: 'users', // 'users', 'activity', 'settings'
-  clubActivity: [], // { username, action, timestamp }
+  sidePanelTab: 'users',
+  clubActivity: [],
 
   setClub: (c) => set({ currentClub: c }),
   clearClub: () => set({ currentClub: null, messages: [], media: [], voiceNotes: [], onlineUsers: [], typingUsers: [] }),
@@ -44,9 +44,9 @@ export const useClubStore = create((set) => ({
   addMessage: (msg) => set(s => ({ messages: [...s.messages.slice(-199), msg] })),
   setMedia: (media) => set({ media }),
   addMedia: (item) => set(s => ({ media: [...s.media.slice(-19), item] })),
-  setVoiceNotes: (notes) => set({ voiceNotes: notes }),
-  addVoiceNote: (note) => set(s => ({ voiceNotes: [...s.voiceNotes.slice(-19), note] })),
-  setOnlineUsers: (users) => set({ onlineUsers: users }),
+  setVoiceNotes: (notes) => set({ voiceNotes: notes || [] }),
+  addVoiceNote: (note) => set(s => ({ voiceNotes: [...(s.voiceNotes || []).slice(-19), note] })),
+  setOnlineUsers: (users) => set({ onlineUsers: users || [] }),
   addTypingUser: ({ username, color, isTyping }) => set(s => {
     if (isTyping && !s.typingUsers.find(u => u.username === username))
       return { typingUsers: [...s.typingUsers, { username, color }] }
@@ -60,7 +60,7 @@ export const useClubStore = create((set) => ({
   setSidePanelOpen: (open) => set({ sidePanelOpen: open }),
   setSidePanelTab: (tab) => set({ sidePanelTab: tab }),
   addActivity: (activity) => set(s => ({ 
-    clubActivity: [{ ...activity, timestamp: Date.now() }, ...s.clubActivity].slice(0, 50) 
+    clubActivity: [{ ...activity, timestamp: Date.now() }, ...(s.clubActivity || [])].slice(0, 50) 
   })),
   clearActivity: () => set({ clubActivity: [] }),
 }))
