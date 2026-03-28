@@ -68,7 +68,7 @@ export default function Club() {
   const [showGifPicker, setShowGifPicker] = useState(false)
   const [recording, setRecording] = useState(false)
   const [mediaRecorder, setMediaRecorder] = useState(null)
-  const [activeTab, setActiveTab] = useState('chat') // chat, media, members, settings
+  const [activeTab, setActiveTab] = useState('chat')
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -77,7 +77,6 @@ export default function Club() {
   const audioFileRef = useRef(null)
   const socketRef = useRef(null)
 
-  // Redirect to login if not logged in
   useEffect(() => {
     if (!isLoggedIn && username === '') {
       navigate('/login', { state: { next: `/club/${clubId}` } })
@@ -190,7 +189,6 @@ export default function Club() {
     setShareMenuOpen(false)
   }
 
-  // Handle image upload
   const handleFileChange = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -211,7 +209,6 @@ export default function Club() {
     finally { setUploading(false); fileRef.current.value = '' }
   }
 
-  // Handle audio file upload
   const handleAudioChange = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -233,7 +230,6 @@ export default function Club() {
     finally { setUploading(false); audioFileRef.current.value = '' }
   }
 
-  // Voice Recording
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -268,7 +264,6 @@ export default function Club() {
     }
   }
 
-  // GIF search
   const searchGifs = async () => {
     if (!gifSearch.trim()) return
     if (!GIPHY_API_KEY) {
@@ -340,7 +335,6 @@ export default function Club() {
 
   return (
     <div style={styles.root}>
-      {/* Header */}
       <div style={styles.header}>
         <button onClick={() => { socketRef.current?.emit('leaveClub'); clearClub(); navigate('/') }} style={styles.backBtn}>←</button>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -367,14 +361,12 @@ export default function Club() {
         </div>
       </div>
 
-      {/* Club ID bar */}
       <div style={styles.idBar}>
         <span style={{ color: '#6B6B85', fontSize: 11 }}>ID: </span>
         <span style={{ color: '#9F67FF', fontSize: 11, fontWeight: 700, letterSpacing: '2px', fontFamily: 'JetBrains Mono, monospace' }}>{clubId}</span>
         {currentClub?.type === 'hidden' && <span style={{ fontSize: 11 }}>🔒</span>}
       </div>
 
-      {/* Tabs */}
       <div style={styles.tabs}>
         <button onClick={() => setActiveTab('chat')} style={{ ...styles.tab, color: activeTab === 'chat' ? '#7C3AED' : '#6B6B85', borderBottomColor: activeTab === 'chat' ? '#7C3AED' : 'transparent' }}>
           💬 Chat
@@ -393,7 +385,6 @@ export default function Club() {
       </div>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-        {/* Chat Tab */}
         {activeTab === 'chat' && (
           <div style={styles.feed} onClick={() => { setShowReactFor(null); setReplyingTo(null) }}>
             {feed.length === 0 && (
@@ -427,7 +418,6 @@ export default function Club() {
               }
             })}
             
-            {/* Reply indicator */}
             {replyingTo && (
               <div style={styles.replyBar}>
                 <div style={{ flex: 1 }}>
@@ -449,7 +439,6 @@ export default function Club() {
           </div>
         )}
 
-        {/* Media Tab */}
         {activeTab === 'media' && (
           <div style={styles.mediaTab}>
             <div style={styles.mediaSection}>
@@ -489,7 +478,6 @@ export default function Club() {
           </div>
         )}
 
-        {/* Members Tab */}
         {activeTab === 'members' && (
           <div style={styles.membersTab}>
             {onlineUsers?.map((user, i) => (
@@ -514,7 +502,6 @@ export default function Club() {
           </div>
         )}
 
-        {/* Admin Settings Tab */}
         {activeTab === 'settings' && isAdmin && (
           <div style={styles.settingsTab}>
             <div style={styles.settingCard}>
@@ -563,7 +550,6 @@ export default function Club() {
         )}
       </div>
 
-      {/* Input Bar (only show in chat tab) */}
       {activeTab === 'chat' && (
         <div style={styles.inputBar}>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
@@ -602,7 +588,6 @@ export default function Club() {
         </div>
       )}
       
-      {/* GIF Picker Modal */}
       {showGifPicker && (
         <div style={styles.gifModal}>
           <div style={styles.gifModalContent}>
@@ -641,7 +626,6 @@ export default function Club() {
   )
 }
 
-// Audio Player Component for media tab
 function AudioPlayer({ url }) {
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef(null)
@@ -659,7 +643,7 @@ function AudioPlayer({ url }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <button onClick={togglePlay} style={styles.smallAudioBtn}>
+      <button onClick={togglePlay} style={smallStyles.smallAudioBtn}>
         {playing ? '⏸️' : '▶️'}
       </button>
       <audio ref={audioRef} src={url} />
@@ -667,7 +651,6 @@ function AudioPlayer({ url }) {
   )
 }
 
-// Message Bubble Component
 function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onReply, currentUser }) {
   if (msg.type === 'system') {
     return (
@@ -718,7 +701,6 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
           </div>
         )}
         
-        {/* Reply Preview */}
         {hasReply && (
           <div style={{
             background: '#0D0D14',
@@ -736,7 +718,6 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
           </div>
         )}
         
-        {/* Main Message Content */}
         <div
           onContextMenu={(e) => { e.preventDefault(); onLongPress() }}
           onDoubleClick={onLongPress}
@@ -775,7 +756,6 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
           )}
         </div>
         
-        {/* Reactions */}
         {reactions.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
             {reactions.map(([emoji, users]) => (
@@ -800,13 +780,11 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
           </div>
         )}
         
-        {/* Message Footer */}
         <div style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', gap: 12, marginTop: 4 }}>
           <span style={{ color: '#6B6B85', fontSize: 10 }}>{fmtTime(msg.timestamp)}</span>
-          <button onClick={onReply} style={styles.replyBtn} title="Reply">↩️</button>
+          <button onClick={onReply} style={msgStyles.replyBtn} title="Reply">↩️</button>
         </div>
         
-        {/* Reaction Picker Popup */}
         {showReactFor && (
           <div style={{
             position: 'absolute',
@@ -844,7 +822,6 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
   )
 }
 
-// Media Bubble Component
 function MediaBubble({ item, isMine, onDownload }) {
   const url = `${SERVER_URL}${item.url}`
   return (
@@ -856,7 +833,7 @@ function MediaBubble({ item, isMine, onDownload }) {
           <img src={url} alt="media" style={{ display: 'block', maxWidth: 240, maxHeight: 200, objectFit: 'cover' }} />
           <div style={{ background: '#0D0D14', padding: '5px 10px', fontSize: 10, color: '#6B6B85', display: 'flex', justifyContent: 'space-between' }}>
             <span>⏱ Expires in ~5 min</span>
-            <button onClick={() => onDownload(url, item.filename)} style={styles.downloadBtn}>⬇️ Download</button>
+            <button onClick={() => onDownload(url, item.filename)} style={msgStyles.downloadBtn}>⬇️ Download</button>
           </div>
         </div>
         <div style={{ color: '#6B6B85', fontSize: 10, marginTop: 4, textAlign: isMine ? 'right' : 'left' }}>{fmtTime(item.timestamp)}</div>
@@ -865,7 +842,6 @@ function MediaBubble({ item, isMine, onDownload }) {
   )
 }
 
-// Audio Bubble Component
 function AudioBubble({ item, isMine, onDownload }) {
   const [playing, setPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
@@ -961,7 +937,7 @@ function AudioBubble({ item, isMine, onDownload }) {
             
             <button
               onClick={() => onDownload(url, item.filename)}
-              style={styles.downloadBtn}
+              style={msgStyles.downloadBtn}
               title="Download"
             >
               ⬇️
@@ -997,8 +973,6 @@ const styles = {
   shareMenuItem: { display: 'block', width: '100%', padding: '8px 16px', background: 'none', border: 'none', color: '#E8E8F0', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', fontSize: 13 },
   replyBar: { background: '#13131C', margin: '4px 12px', padding: '8px 12px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '3px solid #7C3AED' },
   closeReplyBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
-  replyBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, padding: '2px 4px', opacity: 0.6 },
-  downloadBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
   gifModal: { position: 'fixed', bottom: 80, left: 20, right: 20, background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 16, zIndex: 1000, maxHeight: 500, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' },
   gifModalContent: { display: 'flex', flexDirection: 'column', height: '100%' },
   gifSearchBar: { display: 'flex', gap: 8, padding: 12, borderBottom: '1px solid #1E1E2E' },
@@ -1008,7 +982,6 @@ const styles = {
   gifResults: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8, padding: 12, overflowY: 'auto', maxHeight: 380 },
   gifImage: { width: '100%', borderRadius: 8, cursor: 'pointer', transition: 'transform 0.1s ease' },
   
-  // Media Tab Styles
   mediaTab: { flex: 1, overflowY: 'auto', padding: 16 },
   mediaSection: { marginBottom: 24 },
   mediaTitle: { color: '#E8E8F0', fontSize: 16, fontWeight: 600, marginBottom: 12 },
@@ -1020,15 +993,12 @@ const styles = {
   audioItem: { background: '#13131C', borderRadius: 8, padding: 12 },
   audioPlayer: { marginBottom: 8 },
   audioInfo: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#E8E8F0' },
-  smallAudioBtn: { background: '#7C3AED', border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   
-  // Members Tab Styles
   membersTab: { flex: 1, overflowY: 'auto', padding: 16 },
   memberCard: { display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: '#13131C', borderRadius: 12, marginBottom: 8 },
-  adminBtn: { background: '#7C3AED20', border: '1px solid '#7C3AED', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14 },
-  kickBtn: { background: '#EF444420', border: '1px solid '#EF4444', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14 },
+  adminBtn: { background: '#7C3AED20', border: '1px solid #7C3AED', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14 },
+  kickBtn: { background: '#EF444420', border: '1px solid #EF4444', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14 },
   
-  // Settings Tab Styles
   settingsTab: { flex: 1, overflowY: 'auto', padding: 16 },
   settingCard: { background: '#13131C', borderRadius: 12, padding: 20 },
   settingTitle: { color: '#E8E8F0', fontSize: 18, fontWeight: 600, marginBottom: 16 },
@@ -1036,6 +1006,15 @@ const styles = {
   settingInput: { background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 8, padding: '8px 12px', color: '#E8E8F0', width: 150 },
   settingSelect: { background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 8, padding: '8px 12px', color: '#E8E8F0', width: 150 },
   saveBtn: { background: '#7C3AED', border: 'none', borderRadius: 8, padding: '12px', color: '#fff', fontWeight: 600, cursor: 'pointer', width: '100%', marginTop: 16 },
+}
+
+const smallStyles = {
+  smallAudioBtn: { background: '#7C3AED', border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+}
+
+const msgStyles = {
+  replyBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, padding: '2px 4px', opacity: 0.6 },
+  downloadBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
 }
 
 // Add hover styles
