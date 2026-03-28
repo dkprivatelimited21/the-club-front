@@ -66,8 +66,6 @@ export default function Club() {
   const [gifSearch, setGifSearch] = useState('')
   const [gifResults, setGifResults] = useState([])
   const [showGifPicker, setShowGifPicker] = useState(false)
-  const [audioFile, setAudioFile] = useState(null)
-  const [audioPreview, setAudioPreview] = useState(null)
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -89,6 +87,7 @@ export default function Club() {
     const socket = getSocket()
     socketRef.current = socket
 
+    // Socket event handlers
     socket.on('newMessage', (msg) => {
       addMessage(msg)
     })
@@ -110,6 +109,7 @@ export default function Club() {
     socket.on('messageReaction', ({ messageId, reactions }) => updateReaction(messageId, reactions))
     socket.on('disconnect', () => addMessage({ id: crypto.randomUUID(), type: 'system', text: '⚠️ Connection lost. Reconnecting…', timestamp: Date.now() }))
 
+    // Join club
     socket.emit('joinClub', { clubId, pin, username, avatar, userId }, res => {
       if (res.error) { setStatus('error'); setErrMsg(res.error); return }
       setStatus('joined')
@@ -209,12 +209,12 @@ export default function Club() {
     finally { setUploading(false); fileRef.current.value = '' }
   }
 
-  // Handle audio file upload
+  // Handle audio file upload (up to 20MB)
   const handleAudioChange = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     if (file.size > 20 * 1024 * 1024) return alert('Audio file too large (max 20MB)')
-    if (!file.type.startsWith('audio/')) return alert('Please upload an audio file')
+    if (!file.type.startsWith('audio/')) return alert('Please upload an audio file (MP3, WAV, etc.)')
     
     setUploading(true)
     try {
@@ -233,7 +233,11 @@ export default function Club() {
 
   // GIF search
   const searchGifs = async () => {
-    if (!gifSearch.trim() || !GIPHY_API_KEY) return
+    if (!gifSearch.trim()) return
+    if (!GIPHY_API_KEY) {
+      alert('GIF search is not configured. Please add GIPHY API key.')
+      return
+    }
     try {
       const response = await fetch(
         `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(gifSearch)}&limit=20&rating=pg-13`
@@ -241,7 +245,8 @@ export default function Club() {
       const data = await response.json()
       setGifResults(data.data || [])
     } catch (err) {
-      console.error('GIF search failed')
+      console.error('GIF search failed', err)
+      alert('Failed to search GIFs')
     }
   }
 
@@ -280,10 +285,10 @@ export default function Club() {
   )
 
   return (
-    <div style={s.root}>
+    <div style={styles.root}>
       {/* Header */}
-      <div style={s.header}>
-        <button onClick={() => { socketRef.current?.emit('leaveClub'); clearClub(); navigate('/') }} style={s.backBtn}>←</button>
+      <div style={styles.header}>
+        <button onClick={() => { socketRef.current?.emit('leaveClub'); clearClub(); navigate('/') }} style={styles.backBtn}>←</button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 15, color: '#E8E8F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {currentClub?.name || clubId}
@@ -293,23 +298,23 @@ export default function Club() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button onClick={() => setShareMenuOpen(!shareMenuOpen)} style={s.iconBtn} title="Share Club">
+          <button onClick={() => setShareMenuOpen(!shareMenuOpen)} style={styles.iconBtn} title="Share Club">
             📎
           </button>
           {shareMenuOpen && (
-            <div style={s.shareMenu}>
-              <button onClick={copyShareLink} style={s.shareMenuItem}>📋 Copy Club Link</button>
-              <button onClick={() => navigator.clipboard.writeText(clubId)} style={s.shareMenuItem}>🔑 Copy Club ID</button>
+            <div style={styles.shareMenu}>
+              <button onClick={copyShareLink} style={styles.shareMenuItem}>📋 Copy Club Link</button>
+              <button onClick={() => navigator.clipboard.writeText(clubId)} style={styles.shareMenuItem}>🔑 Copy Club ID</button>
             </div>
           )}
-          <button onClick={() => setSidePanelOpen && setSidePanelOpen(!sidePanelOpen)} style={{ ...s.iconBtn, color: sidePanelOpen ? '#7C3AED' : '#6B6B85' }}>
+          <button onClick={() => setSidePanelOpen && setSidePanelOpen(!sidePanelOpen)} style={{ ...styles.iconBtn, color: sidePanelOpen ? '#7C3AED' : '#6B6B85' }}>
             ☰
           </button>
         </div>
       </div>
 
       {/* Club ID bar */}
-      <div style={s.idBar}>
+      <div style={styles.idBar}>
         <span style={{ color: '#6B6B85', fontSize: 11 }}>ID: </span>
         <span style={{ color: '#9F67FF', fontSize: 11, fontWeight: 700, letterSpacing: '2px', fontFamily: 'JetBrains Mono, monospace' }}>{clubId}</span>
         {currentClub?.type === 'hidden' && <span style={{ fontSize: 11 }}>🔒</span>}
@@ -317,7 +322,7 @@ export default function Club() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* Feed */}
-        <div style={s.feed} onClick={() => { setShowReactFor(null); setReplyingTo(null) }}>
+        <div style={styles.feed} onClick={() => { setShowReactFor(null); setReplyingTo(null) }}>
           {feed.length === 0 && (
             <div style={{ textAlign: 'center', paddingTop: 60, color: '#6B6B85' }}>
               <div style={{ fontSize: 44 }}>🎭</div>
@@ -351,14 +356,14 @@ export default function Club() {
           
           {/* Reply indicator */}
           {replyingTo && (
-            <div style={s.replyBar}>
+            <div style={styles.replyBar}>
               <div style={{ flex: 1 }}>
                 <span style={{ fontSize: 11, color: '#7C3AED' }}>Replying to {replyingTo.username}</span>
-                <div style={{ fontSize: 12, color: '#6B6B85' }}>
-                  {replyingTo.text?.substring(0, 60)}
+                <div style={{ fontSize: 12, color: '#6B6B85', marginTop: 2 }}>
+                  {replyingTo.text?.substring(0, 60)}{replyingTo.text?.length > 60 ? '...' : ''}
                 </div>
               </div>
-              <button onClick={() => setReplyingTo(null)} style={s.closeReplyBtn}>✕</button>
+              <button onClick={() => setReplyingTo(null)} style={styles.closeReplyBtn}>✕</button>
             </div>
           )}
           
@@ -372,15 +377,15 @@ export default function Club() {
 
         {/* Side Panel */}
         {sidePanelOpen && (
-          <div style={s.sidePanel}>
-            <div style={s.sidePanelHeader}>
-              <button onClick={() => setSidePanelTab && setSidePanelTab('users')} style={{ ...s.sidePanelTab, color: sidePanelTab === 'users' ? '#7C3AED' : '#6B6B85' }}>
+          <div style={styles.sidePanel}>
+            <div style={styles.sidePanelHeader}>
+              <button onClick={() => setSidePanelTab && setSidePanelTab('users')} style={{ ...styles.sidePanelTab, color: sidePanelTab === 'users' ? '#7C3AED' : '#6B6B85' }}>
                 Users ({onlineUsers?.length || 0})
               </button>
             </div>
-            <div style={s.usersList}>
+            <div style={styles.usersList}>
               {(onlineUsers || []).map((u, i) => (
-                <div key={i} style={s.userItem}>
+                <div key={i} style={styles.userItem}>
                   <img src={u.avatar} width={32} height={32} style={{ borderRadius: '50%', background: '#13131C' }} alt={u.username} />
                   <span style={{ color: '#E8E8F0', fontSize: 13, fontWeight: 600, marginLeft: 10 }}>
                     {u.username}{u.username === currentClub?.host ? ' 👑' : ''}
@@ -394,19 +399,19 @@ export default function Club() {
       </div>
 
       {/* Input Bar */}
-      <div style={s.inputBar}>
+      <div style={styles.inputBar}>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
         <input ref={audioFileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleAudioChange} />
         
-        <button onClick={() => fileRef.current.click()} disabled={uploading} style={s.iconBtn} title="Share Image">
+        <button onClick={() => fileRef.current.click()} disabled={uploading} style={styles.iconBtn} title="Share Image (max 10MB)">
           {uploading ? <Spinner size={16} /> : '🖼️'}
         </button>
         
-        <button onClick={() => audioFileRef.current.click()} disabled={uploading} style={s.iconBtn} title="Share Audio (max 20MB)">
+        <button onClick={() => audioFileRef.current.click()} disabled={uploading} style={styles.iconBtn} title="Share Audio (max 20MB)">
           🎵
         </button>
         
-        <button onClick={() => setShowGifPicker(!showGifPicker)} style={s.iconBtn} title="Search GIF">
+        <button onClick={() => setShowGifPicker(!showGifPicker)} style={styles.iconBtn} title="Search GIF">
           🎬
         </button>
         
@@ -418,38 +423,38 @@ export default function Club() {
           placeholder={replyingTo ? `Reply to ${replyingTo.username}...` : "Say something…"}
           rows={1}
           maxLength={MAX_MSG_LEN}
-          style={s.textarea}
+          style={styles.textarea}
         />
         
-        <button onClick={sendMsg} disabled={!text.trim()} style={{ ...s.sendBtn, opacity: text.trim() ? 1 : 0.4 }}>
+        <button onClick={sendMsg} disabled={!text.trim()} style={{ ...styles.sendBtn, opacity: text.trim() ? 1 : 0.4 }}>
           ➤
         </button>
       </div>
       
       {/* GIF Picker Modal */}
       {showGifPicker && (
-        <div style={s.gifModal}>
-          <div style={s.gifModalContent}>
-            <div style={s.gifSearchBar}>
+        <div style={styles.gifModal}>
+          <div style={styles.gifModalContent}>
+            <div style={styles.gifSearchBar}>
               <input
                 value={gifSearch}
                 onChange={e => setGifSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && searchGifs()}
                 placeholder="Search GIFs..."
-                style={s.gifSearchInput}
+                style={styles.gifSearchInput}
                 autoFocus
               />
-              <button onClick={searchGifs} style={s.gifSearchBtn}>Search</button>
-              <button onClick={() => setShowGifPicker(false)} style={s.gifCloseBtn}>✕</button>
+              <button onClick={searchGifs} style={styles.gifSearchBtn}>Search</button>
+              <button onClick={() => setShowGifPicker(false)} style={styles.gifCloseBtn}>✕</button>
             </div>
-            <div style={s.gifResults}>
+            <div style={styles.gifResults}>
               {gifResults.map(gif => (
                 <img
                   key={gif.id}
                   src={gif.images?.fixed_height_small?.url}
                   alt={gif.title}
                   onClick={() => sendGif(gif.images?.fixed_height?.url)}
-                  style={s.gifImage}
+                  style={styles.gifImage}
                   onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
                   onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
                 />
@@ -606,7 +611,7 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
           <span style={{ color: '#6B6B85', fontSize: 10 }}>{fmtTime(msg.timestamp)}</span>
           <button 
             onClick={onReply} 
-            style={s.replyBtn}
+            style={styles.replyBtn}
             title="Reply"
           >
             ↩️
@@ -640,8 +645,7 @@ function MessageBubble({ msg, isMine, showReactFor, onLongPress, onReact, onRepl
                   cursor: 'pointer',
                   fontSize: 24,
                   padding: 4,
-                  transition: 'transform 0.1s ease',
-                  ':hover': { transform: 'scale(1.2)' }
+                  transition: 'transform 0.1s ease'
                 }}
               >
                 {e}
@@ -666,7 +670,7 @@ function MediaBubble({ item, isMine, onDownload }) {
           <img src={url} alt="media" style={{ display: 'block', maxWidth: 240, maxHeight: 200, objectFit: 'cover' }} />
           <div style={{ background: '#0D0D14', padding: '5px 10px', fontSize: 10, color: '#6B6B85', display: 'flex', justifyContent: 'space-between' }}>
             <span>⏱ Expires in ~5 min</span>
-            <button onClick={() => onDownload(url, item.filename)} style={s.downloadBtn}>⬇️ Download</button>
+            <button onClick={() => onDownload(url, item.filename)} style={styles.downloadBtn}>⬇️ Download</button>
           </div>
         </div>
         <div style={{ color: '#6B6B85', fontSize: 10, marginTop: 4, textAlign: isMine ? 'right' : 'left' }}>{fmtTime(item.timestamp)}</div>
@@ -675,7 +679,7 @@ function MediaBubble({ item, isMine, onDownload }) {
   )
 }
 
-// Audio Bubble Component for voice notes and audio files
+// Audio Bubble Component
 function AudioBubble({ item, isMine, onDownload }) {
   const [playing, setPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
@@ -716,9 +720,18 @@ function AudioBubble({ item, isMine, onDownload }) {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
+  const handleSeek = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const percent = x / rect.width
+    if (audioRef.current && duration) {
+      audioRef.current.currentTime = percent * duration
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 8, margin: '6px 12px' }}>
-      {!isMine && <img src={item.avatar} width={28} height={28} style={{ borderRadius: '50%', flexShrink: 0 }} alt={item.username} />}
+      {!isMine && <img src={item.avatar} width={28} height={28} style={{ borderRadius: '50%', flexShrink: 0, background: '#13131C' }} alt={item.username} />}
       <div style={{ maxWidth: '75%', minWidth: 200 }}>
         {!isMine && <div style={{ color: item.color || '#9F67FF', fontSize: 11, fontWeight: 700, marginBottom: 3 }}>{item.username}</div>}
         <div style={{
@@ -750,13 +763,16 @@ function AudioBubble({ item, isMine, onDownload }) {
             </button>
             
             <div style={{ flex: 1 }}>
-              <div style={{
-                height: 4,
-                background: '#1E1E2E',
-                borderRadius: 2,
-                cursor: 'pointer',
-                position: 'relative'
-              }}>
+              <div 
+                onClick={handleSeek}
+                style={{
+                  height: 4,
+                  background: '#1E1E2E',
+                  borderRadius: 2,
+                  cursor: 'pointer',
+                  position: 'relative'
+                }}
+              >
                 <div style={{
                   width: `${duration ? (currentTime / duration) * 100 : 0}%`,
                   height: 4,
@@ -772,7 +788,7 @@ function AudioBubble({ item, isMine, onDownload }) {
             
             <button
               onClick={() => onDownload(url, item.filename)}
-              style={s.downloadBtn}
+              style={styles.downloadBtn}
               title="Download"
             >
               ⬇️
@@ -792,7 +808,7 @@ function AudioBubble({ item, isMine, onDownload }) {
 }
 
 // Styles
-const s = {
+const styles = {
   root: { height: '100dvh', display: 'flex', flexDirection: 'column', background: '#050508', overflow: 'hidden' },
   header: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid #1E1E2E', background: '#0D0D14', flexShrink: 0 },
   backBtn: { background: 'none', border: 'none', color: '#E8E8F0', fontSize: 20, cursor: 'pointer', fontFamily: 'inherit', padding: 4 },
