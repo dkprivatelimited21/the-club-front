@@ -1,36 +1,23 @@
-import { io } from 'socket.io-client';
-import { SERVER_URL } from './config';
+import { io } from 'socket.io-client'
+import { SERVER_URL } from './config.js'
 
-let socket = null;
+let socket = null
 
 export function getSocket() {
   if (!socket) {
     socket = io(SERVER_URL, {
       transports: ['websocket', 'polling'],
-      timeout: 10000,
       reconnection: true,
       reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-
-    socket.on('connect', () => {
-      console.log('[Socket] Connected:', socket.id);
-    });
-
-    socket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
-    });
-
-    socket.on('connect_error', (err) => {
-      console.error('[Socket] Connection error:', err.message);
-    });
+      reconnectionDelay: 1500,
+    })
+    socket.on('connect', () => console.log('[Socket] connected', socket.id))
+    socket.on('disconnect', r => console.log('[Socket] disconnected', r))
+    socket.on('connect_error', e => console.error('[Socket] error', e.message))
   }
-  return socket;
+  return socket
 }
 
 export function disconnectSocket() {
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-  }
+  if (socket) { socket.disconnect(); socket = null }
 }
