@@ -73,7 +73,8 @@ export default function Club() {
   const [recordingTimer, setRecordingTimer] = useState(null)
   const [activeTab, setActiveTab] = useState('chat')
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false)
-  const [showGifPreview, setShowGifPreview] = useState(false)
+  const [gifLoading, setGifLoading] = useState(false)
+  const [trendingGifs, setTrendingGifs] = useState([])
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -84,6 +85,27 @@ export default function Club() {
   const feedRef = useRef(null)
   const attachmentRef = useRef(null)
   const recordButtonRef = useRef(null)
+  const gifSearchRef = useRef(null)
+
+  // Load trending GIFs when picker opens
+  useEffect(() => {
+    if (showGifPicker && GIPHY_API_KEY) {
+      loadTrendingGifs()
+    }
+  }, [showGifPicker])
+
+  const loadTrendingGifs = async () => {
+    if (!GIPHY_API_KEY) return
+    try {
+      const response = await fetch(
+        `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20&rating=pg-13`
+      )
+      const data = await response.json()
+      setTrendingGifs(data.data || [])
+    } catch (err) {
+      console.error('Failed to load trending GIFs', err)
+    }
+  }
 
   // Detect keyboard visibility on mobile
   useEffect(() => {
@@ -94,10 +116,6 @@ export default function Club() {
         setTimeout(() => {
           bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
         }, 100)
-      } else {
-        setShowAttachmentMenu(false)
-        setShowGifPicker(false)
-        setShowGifPreview(false)
       }
     }
     
@@ -108,11 +126,8 @@ export default function Club() {
   // Close attachment menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (attachmentRef.current && !attachmentRef.current.contains(event.target) && 
-          recordButtonRef.current && !recordButtonRef.current.contains(event.target)) {
+      if (attachmentRef.current && !attachmentRef.current.contains(event.target)) {
         setShowAttachmentMenu(false)
-        setShowGifPicker(false)
-        setShowGifPreview(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -250,8 +265,6 @@ export default function Club() {
   const handleFocus = () => {
     setIsKeyboardVisible(true)
     setShowAttachmentMenu(false)
-    setShowGifPicker(false)
-    setShowGifPreview(false)
     setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, 150)
@@ -324,7 +337,6 @@ export default function Club() {
     setRecording(true)
     setRecordingDuration(0)
     
-    // Start timer
     const timer = setInterval(() => {
       setRecordingDuration(prev => prev + 1)
     }, 1000)
@@ -391,33 +403,46 @@ export default function Club() {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  // GIF search with inline preview
+  // Instagram-like GIF search
   const searchGifs = async () => {
     if (!gifSearch.trim()) {
-      setShowGifPreview(false)
+      loadTrendingGifs()
       return
     }
     if (!GIPHY_API_KEY) {
       alert('GIF search is not configured. Please add GIPHY API key.')
       return
     }
+    setGifLoading(true)
     try {
       const response = await fetch(
-        `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(gifSearch)}&limit=20&rating=pg-13`
+        `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(gifSearch)}&limit=30&rating=pg-13`
       )
       const data = await response.json()
       setGifResults(data.data || [])
-      setShowGifPreview(true)
     } catch (err) {
       console.error('GIF search failed', err)
-      alert('Failed to search GIFs')
+    } finally {
+      setGifLoading(false)
     }
   }
+
+  // Debounced GIF search
+  useEffect(() => {
+    if (!showGifPicker) return
+    const delayDebounceFn = setTimeout(() => {
+      if (gifSearch) {
+        searchGifs()
+      } else {
+        loadTrendingGifs()
+      }
+    }, 500)
+    return () => clearTimeout(delayDebounceFn)
+  }, [gifSearch, showGifPicker])
 
   const sendGif = (gifUrl) => {
     socketRef.current.emit('sendGif', { gifUrl })
     setShowGifPicker(false)
-    setShowGifPreview(false)
     setGifSearch('')
     setGifResults([])
     setShowAttachmentMenu(false)
@@ -523,7 +548,7 @@ export default function Club() {
           <div 
             ref={feedRef}
             style={styles.feed} 
-            onClick={() => { setShowReactFor(null); setReplyingTo(null); setShowAttachmentMenu(false); setShowGifPicker(false); }}
+            onClick={() => { setShowReactFor(null); setReplyingTo(null); setShowAttachmentMenu(false); }}
           >
             {feed.length === 0 && (
               <div style={{ textAlign: 'center', paddingTop: 60, color: '#6B6B85' }}>
@@ -696,6 +721,21 @@ export default function Club() {
           <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
           <input ref={audioFileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleAudioChange} />
           
+          {/* Left side - Voice Note Button */}
+          <button
+            ref={recordButtonRef}
+            onMouseDown={startRecordingWithHold}
+            onMouseUp={stopRecordingAndSend}
+            onMouseLeave={cancelRecording}
+            onTouchStart={startRecordingWithHold}
+            onTouchEnd={stopRecordingAndSend}
+            onTouchCancel={cancelRecording}
+            style={styles.voiceBtn}
+            title="Hold to record voice note"
+          >
+            🎤
+          </button>
+          
           {/* Attachment Button */}
           <div ref={attachmentRef} style={{ position: 'relative' }}>
             <button 
@@ -703,7 +743,7 @@ export default function Club() {
               style={styles.attachBtn}
               title="Attachment"
             >
-              {uploading ? <Spinner size={20} /> : '+'}
+              +
             </button>
             
             {/* Attachment Menu */}
@@ -720,7 +760,6 @@ export default function Club() {
                 <button onClick={() => {
                   setShowGifPicker(true)
                   setShowAttachmentMenu(false)
-                  setShowGifPreview(false)
                 }} style={styles.attachmentItem}>
                   <span style={styles.attachmentIcon}>🎬</span>
                   <span>GIF</span>
@@ -729,7 +768,7 @@ export default function Club() {
             )}
           </div>
           
-          {/* Input Area */}
+          {/* Text Input */}
           <div style={styles.inputContainer}>
             <textarea
               ref={inputRef}
@@ -738,69 +777,94 @@ export default function Club() {
               onKeyDown={handleKeyDown}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              placeholder="Message..."
+              placeholder={recording ? "Recording..." : (replyingTo ? `Reply to ${replyingTo.username}...` : "Message...")}
               rows={1}
               maxLength={MAX_MSG_LEN}
               style={styles.textarea}
+              disabled={recording}
             />
-            
-            {/* GIF Search Input (appears when GIF picker is open) */}
-            {showGifPicker && (
-              <div style={styles.gifInputContainer}>
-                <input
-                  value={gifSearch}
-                  onChange={e => setGifSearch(e.target.value)}
-                  onKeyUp={searchGifs}
-                  placeholder="Search GIFs..."
-                  style={styles.gifInput}
-                  autoFocus
-                />
-                <button onClick={() => setShowGifPicker(false)} style={styles.gifCloseInline}>✕</button>
-              </div>
-            )}
-            
-            {/* GIF Preview Grid */}
-            {showGifPreview && gifResults.length > 0 && (
-              <div style={styles.gifPreviewGrid}>
-                {gifResults.slice(0, 8).map(gif => (
-                  <img
-                    key={gif.id}
-                    src={gif.images?.fixed_height_small?.url}
-                    alt={gif.title}
-                    onClick={() => sendGif(gif.images?.fixed_height?.url)}
-                    style={styles.gifPreviewImage}
-                  />
-                ))}
-              </div>
-            )}
           </div>
           
-          {/* Voice Recording Button with Hold-to-Send */}
-          {!text.trim() && !recording ? (
-            <button
-              ref={recordButtonRef}
-              onMouseDown={startRecordingWithHold}
-              onMouseUp={stopRecordingAndSend}
-              onMouseLeave={cancelRecording}
-              onTouchStart={startRecordingWithHold}
-              onTouchEnd={stopRecordingAndSend}
-              onTouchCancel={cancelRecording}
-              style={styles.voiceBtn}
-              title="Hold to record"
-            >
-              🎤
-            </button>
-          ) : recording ? (
-            <div style={styles.recordingIndicator}>
-              <div style={styles.recordingPulse} />
-              <span style={styles.recordingTime}>{formatDuration(recordingDuration)}</span>
-              <button onClick={cancelRecording} style={styles.cancelRecordBtn}>✕</button>
+          {/* Send Button */}
+          <button onClick={sendMsg} disabled={!text.trim() || recording} style={{ ...styles.sendBtn, opacity: text.trim() && !recording ? 1 : 0.4 }}>
+            ➤
+          </button>
+        </div>
+      )}
+      
+      {/* Instagram-like GIF Picker Modal */}
+      {showGifPicker && (
+        <div style={styles.gifModalOverlay} onClick={() => setShowGifPicker(false)}>
+          <div style={styles.gifModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.gifModalHeader}>
+              <button onClick={() => setShowGifPicker(false)} style={styles.gifModalClose}>✕</button>
+              <h3 style={styles.gifModalTitle}>Search GIFs</h3>
+              <div style={{ width: 32 }} />
             </div>
-          ) : (
-            <button onClick={sendMsg} disabled={!text.trim()} style={{ ...styles.sendBtn, opacity: text.trim() ? 1 : 0.4 }}>
-              ➤
-            </button>
-          )}
+            
+            <div style={styles.gifSearchWrapper}>
+              <div style={styles.gifSearchIcon}>🔍</div>
+              <input
+                ref={gifSearchRef}
+                value={gifSearch}
+                onChange={e => setGifSearch(e.target.value)}
+                placeholder="Search for GIFs"
+                style={styles.gifSearchInput}
+                autoFocus
+              />
+              {gifSearch && (
+                <button onClick={() => setGifSearch('')} style={styles.gifClearSearch}>✕</button>
+              )}
+            </div>
+            
+            <div style={styles.gifResultsContainer}>
+              {gifLoading ? (
+                <div style={styles.gifLoading}>
+                  <Spinner size={32} />
+                  <p>Loading GIFs...</p>
+                </div>
+              ) : (
+                <>
+                  {!gifSearch && trendingGifs.length > 0 && (
+                    <div style={styles.gifSectionTitle}>
+                      <span>✨ Trending GIFs</span>
+                    </div>
+                  )}
+                  <div style={styles.gifGrid}>
+                    {(gifSearch ? gifResults : trendingGifs).map(gif => (
+                      <img
+                        key={gif.id}
+                        src={gif.images?.fixed_height_small?.url}
+                        alt={gif.title}
+                        onClick={() => sendGif(gif.images?.fixed_height?.url)}
+                        style={styles.gifGridItem}
+                        loading="lazy"
+                      />
+                    ))}
+                  </div>
+                  {gifSearch && gifResults.length === 0 && !gifLoading && (
+                    <div style={styles.gifEmpty}>
+                      <span>😢</span>
+                      <p>No GIFs found for "{gifSearch}"</p>
+                      <button onClick={() => setGifSearch('')} style={styles.gifEmptyBtn}>Try trending</button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Recording Indicator Overlay */}
+      {recording && (
+        <div style={styles.recordingOverlay}>
+          <div style={styles.recordingModal}>
+            <div style={styles.recordingPulseLarge} />
+            <div style={styles.recordingTimeLarge}>{formatDuration(recordingDuration)}</div>
+            <div style={styles.recordingHint}>Release to send • Slide to cancel</div>
+            <button onClick={cancelRecording} style={styles.recordingCancelBtn}>Cancel</button>
+          </div>
         </div>
       )}
     </div>
@@ -1148,32 +1212,47 @@ const styles = {
   tab: { background: 'none', border: 'none', padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   feed: { flex: 1, overflowY: 'auto', paddingTop: 8, paddingBottom: 8, WebkitOverflowScrolling: 'touch' },
   
-  inputBar: { display: 'flex', gap: 8, alignItems: 'flex-end', padding: '8px 12px', borderTop: '1px solid #1E1E2E', background: '#0D0D14', flexShrink: 0, paddingBottom: 'max(8px, env(safe-area-inset-bottom))' },
-  attachBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, width: 40, height: 40, fontSize: 24, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease' },
-  inputContainer: { flex: 1, position: 'relative' },
+  inputBar: { display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', borderTop: '1px solid #1E1E2E', background: '#0D0D14', flexShrink: 0, paddingBottom: 'max(8px, env(safe-area-inset-bottom))' },
+  voiceBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, width: 44, height: 44, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease', flexShrink: 0 },
+  attachBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, width: 44, height: 44, fontSize: 24, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease', flexShrink: 0 },
+  inputContainer: { flex: 1 },
   textarea: { width: '100%', background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, padding: '10px 16px', color: '#E8E8F0', fontSize: 15, fontFamily: "'Space Grotesk', sans-serif", outline: 'none', resize: 'none', maxHeight: 120, lineHeight: 1.4, overflowY: 'auto', transition: 'height 0.1s ease' },
-  sendBtn: { background: '#7C3AED', border: 'none', borderRadius: 20, width: 44, height: 44, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' },
-  voiceBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, width: 44, height: 44, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease' },
+  sendBtn: { background: '#7C3AED', border: 'none', borderRadius: 20, width: 44, height: 44, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', flexShrink: 0 },
   
   attachmentMenu: { position: 'absolute', bottom: 50, left: 0, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 12, padding: '8px 0', zIndex: 100, minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' },
   attachmentItem: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'none', border: 'none', color: '#E8E8F0', cursor: 'pointer', width: '100%', textAlign: 'left', fontFamily: 'inherit', fontSize: 14, transition: 'background 0.1s ease' },
   attachmentIcon: { fontSize: 18 },
   
-  gifInputContainer: { marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' },
-  gifInput: { flex: 1, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, padding: '8px 12px', color: '#E8E8F0', fontSize: 14, outline: 'none' },
-  gifCloseInline: { background: '#1E1E2E', border: 'none', borderRadius: 20, padding: '8px 12px', color: '#fff', cursor: 'pointer', fontSize: 12 },
-  gifPreviewGrid: { position: 'absolute', bottom: '100%', left: 0, right: 0, background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 12, padding: 8, marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8, maxHeight: 200, overflowY: 'auto', zIndex: 100 },
-  gifPreviewImage: { width: '100%', borderRadius: 8, cursor: 'pointer', transition: 'transform 0.1s ease' },
-  
-  recordingIndicator: { display: 'flex', alignItems: 'center', gap: 8, background: '#EF4444', borderRadius: 20, padding: '8px 16px', height: 44 },
-  recordingPulse: { width: 12, height: 12, borderRadius: '50%', background: '#fff', animation: 'pulse 1s infinite' },
-  recordingTime: { color: '#fff', fontSize: 14, fontWeight: 600 },
-  cancelRecordBtn: { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, padding: '4px' },
-  
   shareMenu: { position: 'absolute', top: 50, right: 70, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 8, padding: '8px 0', zIndex: 100 },
   shareMenuItem: { display: 'block', width: '100%', padding: '8px 16px', background: 'none', border: 'none', color: '#E8E8F0', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', fontSize: 13 },
   replyBar: { background: '#13131C', margin: '4px 12px', padding: '8px 12px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '3px solid #7C3AED' },
   closeReplyBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
+  
+  // Instagram-like GIF Modal
+  gifModalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn 0.2s ease' },
+  gifModal: { background: '#0D0D14', width: '100%', maxWidth: 500, height: '80vh', borderRadius: '20px 20px 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'slideUp 0.3s ease' },
+  gifModalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderBottom: '1px solid #1E1E2E' },
+  gifModalClose: { background: '#1E1E2E', border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' },
+  gifModalTitle: { color: '#E8E8F0', fontSize: 16, fontWeight: 600, margin: 0 },
+  gifSearchWrapper: { position: 'relative', padding: '12px 16px', borderBottom: '1px solid #1E1E2E' },
+  gifSearchIcon: { position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: '#6B6B85' },
+  gifSearchInput: { width: '100%', background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, padding: '10px 16px 10px 40px', color: '#E8E8F0', fontSize: 15, outline: 'none' },
+  gifClearSearch: { position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14 },
+  gifResultsContainer: { flex: 1, overflowY: 'auto', padding: '12px' },
+  gifSectionTitle: { padding: '8px 4px', color: '#6B6B85', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 },
+  gifGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 },
+  gifGridItem: { width: '100%', borderRadius: 12, cursor: 'pointer', transition: 'transform 0.1s ease', '&:hover': { transform: 'scale(1.02)' } },
+  gifLoading: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', gap: 12, color: '#6B6B85' },
+  gifEmpty: { textAlign: 'center', padding: '40px', color: '#6B6B85' },
+  gifEmptyBtn: { background: '#7C3AED', border: 'none', borderRadius: 20, padding: '8px 16px', color: '#fff', cursor: 'pointer', marginTop: 12 },
+  
+  // Recording Overlay
+  recordingOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  recordingModal: { background: '#13131C', borderRadius: 24, padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, minWidth: 200 },
+  recordingPulseLarge: { width: 80, height: 80, borderRadius: '50%', background: '#EF4444', animation: 'pulse 1s infinite' },
+  recordingTimeLarge: { fontSize: 32, fontWeight: 700, color: '#E8E8F0', fontFamily: 'monospace' },
+  recordingHint: { fontSize: 12, color: '#6B6B85', textAlign: 'center' },
+  recordingCancelBtn: { background: '#1E1E2E', border: 'none', borderRadius: 20, padding: '8px 20px', color: '#fff', cursor: 'pointer', marginTop: 8 },
   
   mediaTab: { flex: 1, overflowY: 'auto', padding: 16, WebkitOverflowScrolling: 'touch' },
   mediaSection: { marginBottom: 24 },
@@ -1214,6 +1293,14 @@ const msgStyles = {
 // Add global styles
 const styleSheet = document.createElement('style')
 styleSheet.textContent = `
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
   @keyframes pulse {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.2); opacity: 0.7; }
