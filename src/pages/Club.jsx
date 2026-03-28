@@ -66,9 +66,14 @@ export default function Club() {
   const [gifSearch, setGifSearch] = useState('')
   const [gifResults, setGifResults] = useState([])
   const [showGifPicker, setShowGifPicker] = useState(false)
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false)
   const [recording, setRecording] = useState(false)
   const [mediaRecorder, setMediaRecorder] = useState(null)
+  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [recordingTimer, setRecordingTimer] = useState(null)
   const [activeTab, setActiveTab] = useState('chat')
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false)
+  const [showGifPreview, setShowGifPreview] = useState(false)
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -76,6 +81,43 @@ export default function Club() {
   const fileRef = useRef(null)
   const audioFileRef = useRef(null)
   const socketRef = useRef(null)
+  const feedRef = useRef(null)
+  const attachmentRef = useRef(null)
+  const recordButtonRef = useRef(null)
+
+  // Detect keyboard visibility on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      const isKeyboard = window.innerHeight < window.outerHeight - 100
+      setIsKeyboardVisible(isKeyboard)
+      if (isKeyboard) {
+        setTimeout(() => {
+          bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }, 100)
+      } else {
+        setShowAttachmentMenu(false)
+        setShowGifPicker(false)
+        setShowGifPreview(false)
+      }
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Close attachment menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (attachmentRef.current && !attachmentRef.current.contains(event.target) && 
+          recordButtonRef.current && !recordButtonRef.current.contains(event.target)) {
+        setShowAttachmentMenu(false)
+        setShowGifPicker(false)
+        setShowGifPreview(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (!isLoggedIn && username === '') {
@@ -91,8 +133,16 @@ export default function Club() {
 
     socket.on('newMessage', (msg) => {
       addMessage(msg)
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
     })
-    socket.on('newMedia', addMedia)
+    socket.on('newMedia', (media) => {
+      addMedia(media)
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+    })
     socket.on('newLink', (link) => addMessage({ ...link, type: 'link' }))
     socket.on('newGif', (gif) => addMessage({ ...gif, type: 'gif' }))
     socket.on('userJoined', ({ user, users }) => {
@@ -136,8 +186,10 @@ export default function Club() {
   }, [isLoggedIn, username, clubId, pin, avatar, userId])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, media])
+    if (activeTab === 'chat') {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, media, activeTab])
 
   const sendMsg = useCallback(() => {
     const t = text.trim()
@@ -156,6 +208,14 @@ export default function Club() {
     setText('')
     setReplyingTo(null)
     emitTyping(false)
+    
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
+    
+    setTimeout(() => {
+      inputRef.current?.focus()
+    }, 50)
   }, [text, replyingTo])
 
   const emitTyping = (v) => {
@@ -174,6 +234,33 @@ export default function Club() {
     emitTyping(true)
     clearTimeout(typingTimer.current)
     typingTimer.current = setTimeout(() => emitTyping(false), 2000)
+    
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + 'px'
+    }
+    
+    if (isKeyboardVisible) {
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 50)
+    }
+  }
+
+  const handleFocus = () => {
+    setIsKeyboardVisible(true)
+    setShowAttachmentMenu(false)
+    setShowGifPicker(false)
+    setShowGifPreview(false)
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, 150)
+  }
+
+  const handleBlur = () => {
+    setTimeout(() => {
+      setIsKeyboardVisible(false)
+    }, 100)
   }
 
   const handleReact = (messageId, emoji) => {
@@ -195,6 +282,7 @@ export default function Club() {
     if (!file.type.startsWith('image/')) return alert('Please upload an image file')
     if (file.size > 10 * 1024 * 1024) return alert('File too large (max 10MB)')
     setUploading(true)
+    setShowAttachmentMenu(false)
     try {
       const fd = new FormData()
       fd.append('media', file)
@@ -216,6 +304,7 @@ export default function Club() {
     if (file.size > 20 * 1024 * 1024) return alert('Audio file too large (max 20MB)')
     
     setUploading(true)
+    setShowAttachmentMenu(false)
     try {
       const fd = new FormData()
       fd.append('media', file)
@@ -230,6 +319,20 @@ export default function Club() {
     finally { setUploading(false); audioFileRef.current.value = '' }
   }
 
+  // Voice Recording with Hold-to-Send
+  const startRecordingWithHold = () => {
+    setRecording(true)
+    setRecordingDuration(0)
+    
+    // Start timer
+    const timer = setInterval(() => {
+      setRecordingDuration(prev => prev + 1)
+    }, 1000)
+    setRecordingTimer(timer)
+    
+    startRecording()
+  }
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -242,7 +345,7 @@ export default function Club() {
         const reader = new FileReader()
         reader.onloadend = () => {
           const audioData = reader.result.split(',')[1]
-          socketRef.current.emit('sendVoiceNote', { audioData, duration: 0 })
+          socketRef.current.emit('sendVoiceNote', { audioData, duration: recordingDuration })
         }
         reader.readAsDataURL(blob)
         stream.getTracks().forEach(track => track.stop())
@@ -250,22 +353,50 @@ export default function Club() {
       
       recorder.start()
       setMediaRecorder(recorder)
-      setRecording(true)
     } catch (err) {
       alert('Microphone access denied')
+      setRecording(false)
+      if (recordingTimer) clearInterval(recordingTimer)
     }
   }
 
-  const stopRecording = () => {
-    if (mediaRecorder) {
+  const stopRecordingAndSend = () => {
+    if (mediaRecorder && recording) {
       mediaRecorder.stop()
       setRecording(false)
       setMediaRecorder(null)
+      if (recordingTimer) {
+        clearInterval(recordingTimer)
+        setRecordingTimer(null)
+      }
     }
   }
 
+  const cancelRecording = () => {
+    if (mediaRecorder && recording) {
+      mediaRecorder.stop()
+      setRecording(false)
+      setMediaRecorder(null)
+      if (recordingTimer) {
+        clearInterval(recordingTimer)
+        setRecordingTimer(null)
+      }
+    }
+    setRecordingDuration(0)
+  }
+
+  const formatDuration = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // GIF search with inline preview
   const searchGifs = async () => {
-    if (!gifSearch.trim()) return
+    if (!gifSearch.trim()) {
+      setShowGifPreview(false)
+      return
+    }
     if (!GIPHY_API_KEY) {
       alert('GIF search is not configured. Please add GIPHY API key.')
       return
@@ -276,6 +407,7 @@ export default function Club() {
       )
       const data = await response.json()
       setGifResults(data.data || [])
+      setShowGifPreview(true)
     } catch (err) {
       console.error('GIF search failed', err)
       alert('Failed to search GIFs')
@@ -285,8 +417,10 @@ export default function Club() {
   const sendGif = (gifUrl) => {
     socketRef.current.emit('sendGif', { gifUrl })
     setShowGifPicker(false)
+    setShowGifPreview(false)
     setGifSearch('')
     setGifResults([])
+    setShowAttachmentMenu(false)
   }
 
   const downloadMedia = (url, filename) => {
@@ -368,17 +502,17 @@ export default function Club() {
       </div>
 
       <div style={styles.tabs}>
-        <button onClick={() => setActiveTab('chat')} style={{ ...styles.tab, color: activeTab === 'chat' ? '#7C3AED' : '#6B6B85', borderBottomColor: activeTab === 'chat' ? '#7C3AED' : 'transparent' }}>
+        <button onClick={() => setActiveTab('chat')} style={{ ...styles.tab, color: activeTab === 'chat' ? '#7C3AED' : '#6B6B85' }}>
           💬 Chat
         </button>
-        <button onClick={() => setActiveTab('media')} style={{ ...styles.tab, color: activeTab === 'media' ? '#7C3AED' : '#6B6B85', borderBottomColor: activeTab === 'media' ? '#7C3AED' : 'transparent' }}>
+        <button onClick={() => setActiveTab('media')} style={{ ...styles.tab, color: activeTab === 'media' ? '#7C3AED' : '#6B6B85' }}>
           🖼️ Media ({media.length})
         </button>
-        <button onClick={() => setActiveTab('members')} style={{ ...styles.tab, color: activeTab === 'members' ? '#7C3AED' : '#6B6B85', borderBottomColor: activeTab === 'members' ? '#7C3AED' : 'transparent' }}>
-          👥 Members ({onlineUsers?.length || 0})
+        <button onClick={() => setActiveTab('members')} style={{ ...styles.tab, color: activeTab === 'members' ? '#7C3AED' : '#6B6B85' }}>
+          👥 Members
         </button>
         {isAdmin && (
-          <button onClick={() => setActiveTab('settings')} style={{ ...styles.tab, color: activeTab === 'settings' ? '#7C3AED' : '#6B6B85', borderBottomColor: activeTab === 'settings' ? '#7C3AED' : 'transparent' }}>
+          <button onClick={() => setActiveTab('settings')} style={{ ...styles.tab, color: activeTab === 'settings' ? '#7C3AED' : '#6B6B85' }}>
             ⚙️ Admin
           </button>
         )}
@@ -386,7 +520,11 @@ export default function Club() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {activeTab === 'chat' && (
-          <div style={styles.feed} onClick={() => { setShowReactFor(null); setReplyingTo(null) }}>
+          <div 
+            ref={feedRef}
+            style={styles.feed} 
+            onClick={() => { setShowReactFor(null); setReplyingTo(null); setShowAttachmentMenu(false); setShowGifPicker(false); }}
+          >
             {feed.length === 0 && (
               <div style={{ textAlign: 'center', paddingTop: 60, color: '#6B6B85' }}>
                 <div style={{ fontSize: 44 }}>🎭</div>
@@ -411,7 +549,10 @@ export default function Club() {
                     showReactFor={showReactFor === item.id}
                     onLongPress={() => setShowReactFor(item.id)}
                     onReact={emoji => handleReact(item.id, emoji)}
-                    onReply={() => setReplyingTo(item)}
+                    onReply={() => {
+                      setReplyingTo(item)
+                      inputRef.current?.focus()
+                    }}
                     currentUser={username}
                   />
                 )
@@ -555,71 +696,111 @@ export default function Club() {
           <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
           <input ref={audioFileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleAudioChange} />
           
-          <button onClick={() => fileRef.current.click()} disabled={uploading} style={styles.iconBtn} title="Share Image (max 10MB)">
-            {uploading ? <Spinner size={16} /> : '🖼️'}
-          </button>
-          
-          <button onClick={() => audioFileRef.current.click()} disabled={uploading} style={styles.iconBtn} title="Share Audio (max 20MB)">
-            🎵
-          </button>
-          
-          <button onClick={recording ? stopRecording : startRecording} style={{ ...styles.iconBtn, color: recording ? '#EF4444' : '#7C3AED' }} title="Voice Note">
-            {recording ? '⏹️' : '🎤'}
-          </button>
-          
-          <button onClick={() => setShowGifPicker(!showGifPicker)} style={styles.iconBtn} title="Search GIF">
-            🎬
-          </button>
-          
-          <textarea
-            ref={inputRef}
-            value={text}
-            onChange={e => handleTyping(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={replyingTo ? `Reply to ${replyingTo.username}...` : "Say something…"}
-            rows={1}
-            maxLength={MAX_MSG_LEN}
-            style={styles.textarea}
-          />
-          
-          <button onClick={sendMsg} disabled={!text.trim()} style={{ ...styles.sendBtn, opacity: text.trim() ? 1 : 0.4 }}>
-            ➤
-          </button>
-        </div>
-      )}
-      
-      {showGifPicker && (
-        <div style={styles.gifModal}>
-          <div style={styles.gifModalContent}>
-            <div style={styles.gifSearchBar}>
-              <input
-                value={gifSearch}
-                onChange={e => setGifSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && searchGifs()}
-                placeholder="Search GIFs..."
-                style={styles.gifSearchInput}
-                autoFocus
-              />
-              <button onClick={searchGifs} style={styles.gifSearchBtn}>Search</button>
-              <button onClick={() => setShowGifPicker(false)} style={styles.gifCloseBtn}>✕</button>
-            </div>
-            <div style={styles.gifResults}>
-              {gifResults.map(gif => (
-                <img
-                  key={gif.id}
-                  src={gif.images?.fixed_height_small?.url}
-                  alt={gif.title}
-                  onClick={() => sendGif(gif.images?.fixed_height?.url)}
-                  style={styles.gifImage}
-                />
-              ))}
-              {gifResults.length === 0 && gifSearch && (
-                <div style={{ textAlign: 'center', padding: 20, color: '#6B6B85' }}>
-                  No GIFs found. Try another search term.
-                </div>
-              )}
-            </div>
+          {/* Attachment Button */}
+          <div ref={attachmentRef} style={{ position: 'relative' }}>
+            <button 
+              onClick={() => setShowAttachmentMenu(!showAttachmentMenu)} 
+              style={styles.attachBtn}
+              title="Attachment"
+            >
+              {uploading ? <Spinner size={20} /> : '+'}
+            </button>
+            
+            {/* Attachment Menu */}
+            {showAttachmentMenu && !recording && (
+              <div style={styles.attachmentMenu}>
+                <button onClick={() => fileRef.current.click()} style={styles.attachmentItem}>
+                  <span style={styles.attachmentIcon}>🖼️</span>
+                  <span>Photo/Video</span>
+                </button>
+                <button onClick={() => audioFileRef.current.click()} style={styles.attachmentItem}>
+                  <span style={styles.attachmentIcon}>🎵</span>
+                  <span>Audio File</span>
+                </button>
+                <button onClick={() => {
+                  setShowGifPicker(true)
+                  setShowAttachmentMenu(false)
+                  setShowGifPreview(false)
+                }} style={styles.attachmentItem}>
+                  <span style={styles.attachmentIcon}>🎬</span>
+                  <span>GIF</span>
+                </button>
+              </div>
+            )}
           </div>
+          
+          {/* Input Area */}
+          <div style={styles.inputContainer}>
+            <textarea
+              ref={inputRef}
+              value={text}
+              onChange={e => handleTyping(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              placeholder="Message..."
+              rows={1}
+              maxLength={MAX_MSG_LEN}
+              style={styles.textarea}
+            />
+            
+            {/* GIF Search Input (appears when GIF picker is open) */}
+            {showGifPicker && (
+              <div style={styles.gifInputContainer}>
+                <input
+                  value={gifSearch}
+                  onChange={e => setGifSearch(e.target.value)}
+                  onKeyUp={searchGifs}
+                  placeholder="Search GIFs..."
+                  style={styles.gifInput}
+                  autoFocus
+                />
+                <button onClick={() => setShowGifPicker(false)} style={styles.gifCloseInline}>✕</button>
+              </div>
+            )}
+            
+            {/* GIF Preview Grid */}
+            {showGifPreview && gifResults.length > 0 && (
+              <div style={styles.gifPreviewGrid}>
+                {gifResults.slice(0, 8).map(gif => (
+                  <img
+                    key={gif.id}
+                    src={gif.images?.fixed_height_small?.url}
+                    alt={gif.title}
+                    onClick={() => sendGif(gif.images?.fixed_height?.url)}
+                    style={styles.gifPreviewImage}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Voice Recording Button with Hold-to-Send */}
+          {!text.trim() && !recording ? (
+            <button
+              ref={recordButtonRef}
+              onMouseDown={startRecordingWithHold}
+              onMouseUp={stopRecordingAndSend}
+              onMouseLeave={cancelRecording}
+              onTouchStart={startRecordingWithHold}
+              onTouchEnd={stopRecordingAndSend}
+              onTouchCancel={cancelRecording}
+              style={styles.voiceBtn}
+              title="Hold to record"
+            >
+              🎤
+            </button>
+          ) : recording ? (
+            <div style={styles.recordingIndicator}>
+              <div style={styles.recordingPulse} />
+              <span style={styles.recordingTime}>{formatDuration(recordingDuration)}</span>
+              <button onClick={cancelRecording} style={styles.cancelRecordBtn}>✕</button>
+            </div>
+          ) : (
+            <button onClick={sendMsg} disabled={!text.trim()} style={{ ...styles.sendBtn, opacity: text.trim() ? 1 : 0.4 }}>
+              ➤
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -963,26 +1144,38 @@ const styles = {
   backBtn: { background: 'none', border: 'none', color: '#E8E8F0', fontSize: 20, cursor: 'pointer', fontFamily: 'inherit', padding: 4 },
   iconBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 8, width: 40, height: 40, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease' },
   idBar: { background: '#0D0D14', padding: '5px 14px', borderBottom: '1px solid #1E1E2E', display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 },
-  tabs: { display: 'flex', gap: 4, padding: '8px 12px', background: '#0D0D14', borderBottom: '1px solid #1E1E2E', flexShrink: 0 },
-  tab: { background: 'none', border: 'none', padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', borderBottom: '2px solid transparent', transition: 'all 0.1s ease' },
-  feed: { flex: 1, overflowY: 'auto', paddingTop: 8, paddingBottom: 8 },
-  inputBar: { display: 'flex', gap: 8, alignItems: 'flex-end', padding: '8px 12px', borderTop: '1px solid #1E1E2E', background: '#0D0D14', flexShrink: 0 },
-  textarea: { flex: 1, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, padding: '10px 16px', color: '#E8E8F0', fontSize: 15, fontFamily: "'Space Grotesk', sans-serif", outline: 'none', resize: 'none', maxHeight: 100, lineHeight: 1.4, overflowY: 'auto' },
+  tabs: { display: 'flex', gap: 4, padding: '8px 12px', background: '#0D0D14', borderBottom: '1px solid #1E1E2E', flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' },
+  tab: { background: 'none', border: 'none', padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  feed: { flex: 1, overflowY: 'auto', paddingTop: 8, paddingBottom: 8, WebkitOverflowScrolling: 'touch' },
+  
+  inputBar: { display: 'flex', gap: 8, alignItems: 'flex-end', padding: '8px 12px', borderTop: '1px solid #1E1E2E', background: '#0D0D14', flexShrink: 0, paddingBottom: 'max(8px, env(safe-area-inset-bottom))' },
+  attachBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, width: 40, height: 40, fontSize: 24, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease' },
+  inputContainer: { flex: 1, position: 'relative' },
+  textarea: { width: '100%', background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, padding: '10px 16px', color: '#E8E8F0', fontSize: 15, fontFamily: "'Space Grotesk', sans-serif", outline: 'none', resize: 'none', maxHeight: 120, lineHeight: 1.4, overflowY: 'auto', transition: 'height 0.1s ease' },
   sendBtn: { background: '#7C3AED', border: 'none', borderRadius: 20, width: 44, height: 44, color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' },
+  voiceBtn: { background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, width: 44, height: 44, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', transition: 'all 0.1s ease' },
+  
+  attachmentMenu: { position: 'absolute', bottom: 50, left: 0, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 12, padding: '8px 0', zIndex: 100, minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.3)' },
+  attachmentItem: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'none', border: 'none', color: '#E8E8F0', cursor: 'pointer', width: '100%', textAlign: 'left', fontFamily: 'inherit', fontSize: 14, transition: 'background 0.1s ease' },
+  attachmentIcon: { fontSize: 18 },
+  
+  gifInputContainer: { marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' },
+  gifInput: { flex: 1, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 20, padding: '8px 12px', color: '#E8E8F0', fontSize: 14, outline: 'none' },
+  gifCloseInline: { background: '#1E1E2E', border: 'none', borderRadius: 20, padding: '8px 12px', color: '#fff', cursor: 'pointer', fontSize: 12 },
+  gifPreviewGrid: { position: 'absolute', bottom: '100%', left: 0, right: 0, background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 12, padding: 8, marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8, maxHeight: 200, overflowY: 'auto', zIndex: 100 },
+  gifPreviewImage: { width: '100%', borderRadius: 8, cursor: 'pointer', transition: 'transform 0.1s ease' },
+  
+  recordingIndicator: { display: 'flex', alignItems: 'center', gap: 8, background: '#EF4444', borderRadius: 20, padding: '8px 16px', height: 44 },
+  recordingPulse: { width: 12, height: 12, borderRadius: '50%', background: '#fff', animation: 'pulse 1s infinite' },
+  recordingTime: { color: '#fff', fontSize: 14, fontWeight: 600 },
+  cancelRecordBtn: { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, padding: '4px' },
+  
   shareMenu: { position: 'absolute', top: 50, right: 70, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 8, padding: '8px 0', zIndex: 100 },
   shareMenuItem: { display: 'block', width: '100%', padding: '8px 16px', background: 'none', border: 'none', color: '#E8E8F0', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', fontSize: 13 },
   replyBar: { background: '#13131C', margin: '4px 12px', padding: '8px 12px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 12, borderLeft: '3px solid #7C3AED' },
   closeReplyBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
-  gifModal: { position: 'fixed', bottom: 80, left: 20, right: 20, background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 16, zIndex: 1000, maxHeight: 500, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' },
-  gifModalContent: { display: 'flex', flexDirection: 'column', height: '100%' },
-  gifSearchBar: { display: 'flex', gap: 8, padding: 12, borderBottom: '1px solid #1E1E2E' },
-  gifSearchInput: { flex: 1, background: '#13131C', border: '1px solid #1E1E2E', borderRadius: 8, padding: '10px 12px', color: '#E8E8F0', outline: 'none' },
-  gifSearchBtn: { background: '#7C3AED', border: 'none', borderRadius: 8, padding: '10px 16px', color: '#fff', cursor: 'pointer' },
-  gifCloseBtn: { background: '#1E1E2E', border: 'none', borderRadius: 8, padding: '10px 16px', color: '#fff', cursor: 'pointer' },
-  gifResults: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8, padding: 12, overflowY: 'auto', maxHeight: 380 },
-  gifImage: { width: '100%', borderRadius: 8, cursor: 'pointer', transition: 'transform 0.1s ease' },
   
-  mediaTab: { flex: 1, overflowY: 'auto', padding: 16 },
+  mediaTab: { flex: 1, overflowY: 'auto', padding: 16, WebkitOverflowScrolling: 'touch' },
   mediaSection: { marginBottom: 24 },
   mediaTitle: { color: '#E8E8F0', fontSize: 16, fontWeight: 600, marginBottom: 12 },
   mediaGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 },
@@ -994,7 +1187,7 @@ const styles = {
   audioPlayer: { marginBottom: 8 },
   audioInfo: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#E8E8F0' },
   
-  membersTab: { flex: 1, overflowY: 'auto', padding: 16 },
+  membersTab: { flex: 1, overflowY: 'auto', padding: 16, WebkitOverflowScrolling: 'touch' },
   memberCard: { display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: '#13131C', borderRadius: 12, marginBottom: 8 },
   adminBtn: { background: '#7C3AED20', border: '1px solid #7C3AED', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14 },
   kickBtn: { background: '#EF444420', border: '1px solid #EF4444', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14 },
@@ -1006,6 +1199,7 @@ const styles = {
   settingInput: { background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 8, padding: '8px 12px', color: '#E8E8F0', width: 150 },
   settingSelect: { background: '#0D0D14', border: '1px solid #1E1E2E', borderRadius: 8, padding: '8px 12px', color: '#E8E8F0', width: 150 },
   saveBtn: { background: '#7C3AED', border: 'none', borderRadius: 8, padding: '12px', color: '#fff', fontWeight: 600, cursor: 'pointer', width: '100%', marginTop: 16 },
+  downloadBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
 }
 
 const smallStyles = {
@@ -1017,12 +1211,17 @@ const msgStyles = {
   downloadBtn: { background: 'none', border: 'none', color: '#6B6B85', cursor: 'pointer', fontSize: 14, padding: '4px 8px' },
 }
 
-// Add hover styles
+// Add global styles
 const styleSheet = document.createElement('style')
 styleSheet.textContent = `
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.7; }
+  }
   button:hover { opacity: 0.8; transform: scale(0.98); }
   button:active { transform: scale(0.95); }
   img { user-select: none; }
   textarea:focus { border-color: #7C3AED; }
+  * { -webkit-tap-highlight-color: transparent; }
 `
 document.head.appendChild(styleSheet)
